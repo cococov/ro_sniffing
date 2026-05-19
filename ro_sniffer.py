@@ -11,10 +11,11 @@ import sys
 import struct
 import time
 import argparse
+import platform
 from datetime import datetime
 
 import psutil
-from scapy.all import sniff, TCP, IP, Raw
+from scapy.all import sniff, TCP, IP, Raw, get_if_list
 
 
 # Puertos conocidos de Ragnarok Online (pueden variar por servidor)
@@ -842,9 +843,19 @@ def main():
     parser = argparse.ArgumentParser(description="Ragnarok Online Packet Sniffer")
     parser.add_argument("--ids", action="store_true",
                         help="Modo compacto: solo listar header IDs de los paquetes")
+    parser.add_argument("--iface", type=str,
+                        help="Interfaz de red a usar (recomendado en Windows)")
+    parser.add_argument("--list-ifaces", action="store_true",
+                        help="Lista interfaces disponibles y sale")
     parser.add_argument("ports", nargs="*", type=int,
                         help="Puertos personalizados a monitorear")
     args = parser.parse_args()
+
+    if args.list_ifaces:
+        print(f"{Colors.BOLD}[*] Interfaces disponibles:{Colors.RESET}")
+        for iface in get_if_list():
+            print(f"  - {iface}")
+        sys.exit(0)
 
     print(f"""
 {Colors.BOLD}{Colors.CYAN}╔══════════════════════════════════════════════╗
@@ -880,6 +891,8 @@ def main():
     # Construir filtro
     bpf_filter = build_bpf_filter(monitor_ports)
     print(f"{Colors.BOLD}[*] Filtro BPF: {bpf_filter}{Colors.RESET}")
+    if args.iface:
+        print(f"{Colors.BOLD}[*] Interfaz: {args.iface}{Colors.RESET}")
     print(f"{Colors.BOLD}[*] Capturando paquetes... (Ctrl+C para detener){Colors.RESET}")
     print(f"{Colors.DIM}{'─' * 60}{Colors.RESET}")
 
@@ -889,11 +902,20 @@ def main():
         sniff(
             filter=bpf_filter,
             prn=lambda pkt: packet_callback(pkt, local_ports, server_ports, ids_only),
+            iface=args.iface,
             store=False,
         )
     except PermissionError:
-        print(f"\n{Colors.RED}[!] Error: Se requieren permisos de root/sudo.{Colors.RESET}")
-        print(f"{Colors.YELLOW}    Ejecuta: sudo python3 {sys.argv[0]}{Colors.RESET}")
+        print(f"\n{Colors.RED}[!] Error: Se requieren permisos elevados para capturar paquetes.{Colors.RESET}")
+        if platform.system().lower() == "windows":
+            print(f"{Colors.YELLOW}    Ejecuta PowerShell/CMD como Administrador y vuelve a correr el script.{Colors.RESET}")
+        else:
+            print(f"{Colors.YELLOW}    Ejecuta: sudo python3 {sys.argv[0]}{Colors.RESET}")
+        sys.exit(1)
+    except OSError as err:
+        print(f"\n{Colors.RED}[!] Error de captura: {err}{Colors.RESET}")
+        if platform.system().lower() == "windows":
+            print(f"{Colors.YELLOW}    Verifica que Npcap esté instalado y prueba con --list-ifaces / --iface.{Colors.RESET}")
         sys.exit(1)
     except KeyboardInterrupt:
         print(f"\n\n{Colors.BOLD}[*] Sniffer detenido.{Colors.RESET}")
